@@ -2,6 +2,8 @@
 
 Raspberry Pi Pico (RP2040) firmware for a LoRa master node. The master periodically broadcasts beacons, polls sensor data from slave nodes, and displays status on an I2C LCD. UART is used for external communication and debugging.
 
+> **This project is part of a master/slave pair and must be used together with the slave node project [pico_rx260101](https://github.com/leo2m4a/pico_rx260101).**
+
 ## Target Board
 
 This project is designed for the **宅老大 Pico LoRa** development board, which integrates a Raspberry Pi Pico (RP2040) with an SX1262 LoRa module.
