@@ -8,6 +8,7 @@
 #include <RadioLib.h>
 #include <usr_lib/i2c_lcd.h>
 #include <usr_lib/ds3231.h>
+#include "at24c32.h"
 #include "global_def.h"
 #include "main.h"
 #include "mst_ur_proc.h"
@@ -453,6 +454,9 @@ int main()
     lcd_set_cursor(0,12);
     lcd_string("E");
         }
+
+    // load relay schedule from AT24C32 EEPROM
+    at24c32_load_sch_rly(I2C_PORT, AT24C32_ADDR, gSCH_RLY);
 
     while (true) {
       if (receivedFlag) {
