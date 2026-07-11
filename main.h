@@ -33,5 +33,4 @@ uint8_t gPARAM_APOLL_RXDATA[16];
 
 uint8_t gPARAM_ACT_DATA[8];
 
-
-
+uint8_t gSCH_RLY[24 * 4];

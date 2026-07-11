@@ -38,11 +38,12 @@ add_subdirectory(RadioLib usr_lib )
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(pico_mst_260219 pico_mst_260219.cpp 
+add_executable(pico_mst_260219 pico_mst_260219.cpp
 RadioLib/src/hal/RPiPico/PicoHal.cpp
     RadioLib/src/modules/SX126x/SX126x.cpp
     RadioLib/src/modules/SX126x/SX1262.cpp
     usr_lib/i2c_lcd.cpp
+    usr_lib/at24c32.c
     mst_ur_proc.cpp
     mst_rf_cmd_proc.cpp
     )
