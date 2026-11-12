@@ -16,6 +16,7 @@
 
 void update_ds(unsigned char);
 void read_ds(void);
+void load_sch_from_eep(uint8_t rly_no,uint8_t *dst_rly_sch,uint8_t *def_rly_sch);
 const char * days[7] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
 
 uint8_t rf_state = 0;
@@ -460,7 +461,13 @@ int main()
         }
 
     // load relay schedule from AT24C32 EEPROM
+    // 1) 96-byte block at SCH_RLY_EEPROM_ADDR is the default for every relay
     at24c32_load_sch_rly(I2C_PORT, AT24C32_ADDR, gSCH_RLY);
+    // 2) a relay's own record (valid signature) overrides its 24 bytes
+    for (uint8_t rly = 0; rly < 4; rly++)
+    {
+      load_sch_from_eep(rly, &gSCH_RLY[24*rly], &gSCH_RLY[24*rly]);
+    }
 
     while (true) {
       if (receivedFlag) {

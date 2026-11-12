@@ -105,10 +105,10 @@ Replies are 16 bytes, starting `0x92`, `0x10`, MID `0x02`, `0x00`:
 | Address | Contents |
 |---|---|
 | `0x0000` | Reserved for system info |
-| `0x0080` | Relay schedules, 96 bytes (`24 × 4`), read into `gSCH_RLY` at startup |
-| `0x0100` | Per-relay schedule records for `load_sch_from_eep()` (not called yet): one 32-byte page per relay at `0x0100 + 0x20·n`. Bytes 0–23 are the schedule; bytes 24–25 must be `0x16`, `0x88` for the record to load. |
+| `0x0080` | Default relay schedules, 96 bytes (`24 × 4`), read into `gSCH_RLY` at startup |
+| `0x0100` | Per-relay schedule records: one 32-byte page per relay at `0x0100 + 0x20·n` (relays 0–3). Bytes 0–23 are the schedule; bytes 24–25 must be `0x16`, `0x88` for the record to load. |
 
-At startup the master loads the schedule from `0x0080` with no validity check.
+At startup the master first loads all four schedules from `0x0080` (no validity check). Then, for each relay whose record at `0x0100 + 0x20·n` has a valid signature, that record replaces the relay's 24 bytes.
 
 ## License
 
