@@ -74,6 +74,8 @@ Flash the resulting `.uf2` file to the Pico by holding BOOTSEL and dragging the 
 
 The device operates as a master node (MID `0x02`). It sends 12-byte beacon and poll packets to slave nodes and processes their responses. Command processing is handled in `mst_rf_cmd_proc.cpp`. UART command handling is in `mst_ur_proc.cpp`.
 
+The full UART/RF packet format is documented in [`docs/pico_lora_cmd2604091.ods`](docs/pico_lora_cmd2604091.ods) (LibreOffice Calc spreadsheet).
+
 ## License
 
 Project source code is provided as-is. RadioLib is copyright Jan Gromeš and contributors, used under the [MIT License](https://github.com/jgromes/RadioLib/blob/master/LICENSE).
