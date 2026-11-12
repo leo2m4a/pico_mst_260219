@@ -143,7 +143,7 @@ uint8_t mst_ur_rsp_read_eep(uint16_t word_addr,uint8_t *dbuf,uint8_t *outbuf)
   *(outbuf+2) = MY_MID;
   *(outbuf+3) = 0;//sid
 //
-  *(outbuf+4) = 0x11;
+  *(outbuf+4) = 0x35;//read
   *(outbuf+5) = 0 ;
   *(outbuf+6) = *(dbuf+0);
   *(outbuf+7) = *(dbuf+1);
