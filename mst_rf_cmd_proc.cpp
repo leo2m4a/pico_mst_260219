@@ -78,9 +78,17 @@ uint8_t mst_compose_ur_rsp_w4(uint8_t *inbuf,uint8_t *outbuf)
   return ret;
 }
 
+// slave poll 回應 → host 的 echo 封包
+// [fix] 由 16 bytes 加長到 24 bytes：原本 byte 15 固定填 0xAA、長度只到 15，
+//       slave 回應裡的 DS18B20（inbuf[15..16]）傳不到 host。
+//
+//  byte : 0    1    2    3    4    5    6     7     8    9   10    11    12    13    14    15   16   17-22  23
+//  value: A0   18   MID  SID  AA   04   tmpH  tmpL  rly  io  adc0  humH  humL  adcH  adcL  dsH  dsL  00     AA
+//  (byte 6-16 直接取自 slave 回應 inbuf[6..16]；byte 0-14 位置與舊 16-byte 格式相同)
 uint8_t mst_compose_rf_rsp_echo(uint8_t *inbuf,uint8_t *outbuf)
 {
-  uint8_t ret=16;
+  uint8_t ret=24;
+  int i;
   *(outbuf+0) = 0xa0;
   *(outbuf+1) = ret;
   *(outbuf+2) = *(inbuf+2);
@@ -88,17 +96,12 @@ uint8_t mst_compose_rf_rsp_echo(uint8_t *inbuf,uint8_t *outbuf)
   //
   *(outbuf+4) = 0xaa;
   *(outbuf+5) = 4;
-  *(outbuf+6) = *(inbuf+6);
-  *(outbuf+7) = *(inbuf+7);
-  //
-  *(outbuf+8) = *(inbuf+8);
-  *(outbuf+9) = *(inbuf+9);
-  *(outbuf+10) = *(inbuf+10);
-  *(outbuf+11) = *(inbuf+11);  
-  //
-  *(outbuf+12) = *(inbuf+12);
-  *(outbuf+13) = *(inbuf+13);
-  *(outbuf+14) = *(inbuf+14);
-  *(outbuf+15) = 0xaa;//*(inbuf+15);    
+  // 6..16: tempH, tempL, rly, io, adc0, humH, humL, adcH, adcL, dsH, dsL
+  for(i=6;i<=16;i++)
+  {*(outbuf+i) = *(inbuf+i);}
+  // 17..22: 保留
+  for(i=17;i<=22;i++)
+  {*(outbuf+i) = 0;}
+  *(outbuf+23) = 0xaa;
   return ret;
 }

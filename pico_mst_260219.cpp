@@ -484,8 +484,16 @@ int main()
             
             // 清除標誌
             receivedFlag = false;
-            state = radio->readData(&gPARAM_RFRX_buf[0], 16);
-            memcpy(&gPARAM_RFRX_buf_lat[0],&gPARAM_RFRX_buf[0],16);
+            // [fix] 依實際收到的長度讀取（原本固定 16 bytes，slave 的 poll 回應是 20 bytes，
+            //       後 4 bytes（含 DS18B20 低位元組）被截掉）。
+            //   - getPacketLength()：取得剛收到的封包長度（SX126x GetRxBufferStatus）
+            //   - readData(buf, len)：實際讀 min(len, 封包長度)；len = 0 會整包讀完，
+            //     但 LoRa 最長 255 bytes，所以要先限制在 buffer 大小內，避免寫爆。
+            size_t rx_len = radio->getPacketLength();
+            if (rx_len > sizeof(gPARAM_RFRX_buf)) { rx_len = sizeof(gPARAM_RFRX_buf); }
+            memset(&gPARAM_RFRX_buf[0], 0, sizeof(gPARAM_RFRX_buf));   // 清掉上一包較長封包的殘留
+            state = radio->readData(&gPARAM_RFRX_buf[0], rx_len);
+            memcpy(&gPARAM_RFRX_buf_lat[0],&gPARAM_RFRX_buf[0],sizeof(gPARAM_RFRX_buf_lat));
             if (state == RADIOLIB_ERR_NONE) {
               //rf cmd process
               ret = mst_rf_cmd_process(&gPARAM_RFRX_buf_lat[0],&gPARAM_UR1TX_buf[0],&gPARAM_UR1TX_buf_leng,&gDisp_BUF_2[0]);

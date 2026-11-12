@@ -77,6 +77,30 @@ The device operates as a master node (MID `0x02`). It sends 12-byte beacon and p
 
 The full UART/RF packet format is documented in [`docs/pico_lora_cmd2604091.ods`](docs/pico_lora_cmd2604091.ods) (LibreOffice Calc spreadsheet).
 
+### Slave poll response forwarded to host (`0xA0`, 24 bytes)
+
+When a slave answers a poll (`0xAA … 0xAA`), the master forwards it to the host over UART:
+
+| Byte | Contents |
+|---|---|
+| 0 | `0xA0` |
+| 1 | `0x18` (length = 24) |
+| 2 | MID field from slave reply |
+| 3 | SID |
+| 4 | `0xAA` |
+| 5 | `0x04` |
+| 6–7 | SHT40 temperature (high, low) |
+| 8 | Relay state |
+| 9 | IO state |
+| 10 | ADC0 (8-bit) |
+| 11–12 | SHT40 humidity (high, low) |
+| 13–14 | ADC0 raw (high, low) |
+| 15–16 | DS18B20 temperature (high, low) |
+| 17–22 | Reserved (`0x00`) |
+| 23 | `0xAA` |
+
+Bytes 0–14 are at the same offsets as the earlier 16-byte format; byte 15 used to be a fixed `0xAA`.
+
 ### UART EEPROM commands (`0x83`)
 
 Read or write 8 bytes of the AT24C32 at any word address. Byte numbers are offsets in the packet.
