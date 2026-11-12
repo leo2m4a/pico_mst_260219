@@ -2,8 +2,13 @@
 #include "pico/stdlib.h"
 #include "global_def.h"
 #include "mst_ur_proc.h"
+#include "hardware/i2c.h"
+#include "usr_lib/at24c32.h"
+
 
 extern uint8_t gPARAM_ACT_DATA[8];
+extern int at24c32_write_page(i2c_inst_t *i2c, uint8_t dev_addr, uint16_t word_addr, const uint8_t *data, size_t len);
+extern int at24c32_read(i2c_inst_t *i2c, uint8_t dev_addr, uint16_t word_addr, uint8_t *data, size_t len);
 //55 0c 00 ff 00 00 00 00 00 00 00 00  AA 0C 02 00 00 00 06 07 00 00 00 00
 //78 0c 01 83 11 04 01 01 00 00 00 00  89 0C 02 83 11 04 00 00 00 00 00 00 
 uint8_t mst_compose_rf_bcn(uint8_t *val,uint8_t sec,uint8_t min,uint8_t hour)
@@ -101,6 +106,60 @@ uint8_t mst_ur_rsp_echo(uint8_t *outbuf,uint8_t ret_code4,uint8_t ret_code5)
   
   return ret;
 }
+uint8_t mst_ur_rsp_rw_eep(uint16_t word_addr,uint8_t *dbuf,uint8_t *outbuf)
+{
+  uint8_t ret=16;
+  
+  *(outbuf+0) = 0x92;
+  *(outbuf+1) = ret;
+  *(outbuf+2) = MY_MID;
+  *(outbuf+3) = 0;//sid
+//
+  *(outbuf+4) = 0x11;
+  *(outbuf+5) = word_addr >>8 ;
+  *(outbuf+6) = (uint8_t)word_addr & 0xff;
+  *(outbuf+7) = *(dbuf+0);
+  //
+  *(outbuf+8) = *(dbuf+1);
+  *(outbuf+9) = *(dbuf+2);
+  *(outbuf+10) = *(dbuf+3);
+  *(outbuf+11) = *(dbuf+4);
+  //
+  *(outbuf+12) = *(dbuf+5);    
+  *(outbuf+13) = *(dbuf+6);    
+  *(outbuf+14) = *(dbuf+7);
+  *(outbuf+15) = 0;
+   
+
+  return ret;
+}
+
+uint8_t mst_ur_rsp_read_eep(uint16_t word_addr,uint8_t *dbuf,uint8_t *outbuf)
+{
+  uint8_t ret=16;
+  
+  *(outbuf+0) = 0x92;
+  *(outbuf+1) = ret;
+  *(outbuf+2) = MY_MID;
+  *(outbuf+3) = 0;//sid
+//
+  *(outbuf+4) = 0x11;
+  *(outbuf+5) = 0 ;
+  *(outbuf+6) = *(dbuf+0);
+  *(outbuf+7) = *(dbuf+1);
+//
+  *(outbuf+8) = *(dbuf+2);
+  *(outbuf+9) = *(dbuf+3);
+  *(outbuf+10) = *(dbuf+4);
+  *(outbuf+11) = *(dbuf+5);    
+  //
+  *(outbuf+12) = *(dbuf+6);    
+  *(outbuf+13) = *(dbuf+7);
+  *(outbuf+14) = 0;
+  *(outbuf+15) = 0;    
+
+  return ret;
+}
 uint8_t mst_ur_rsp_write_mst_a0(uint8_t *outbuf)
 {
   uint8_t ret=12;
@@ -171,6 +230,10 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
   uint8_t sid = *(inbuf+3);
   uint8_t subcmd = *(inbuf+4);
   uint8_t addr   = *(inbuf+5);
+  uint8_t addr_l = *(inbuf+6);
+  uint16_t word_addr = (addr<<8)|addr_l;
+  uint8_t datatemp[8];
+  
   if(cmd == 0x55)
   {
     if(subcmd == 0x0)
@@ -220,6 +283,10 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
         gPARAM_ACT_DATA[0] = 0x1;
         Stru_curTime.caldone=1;
       }
+      //else if(addr >= 0x20)&&(addr >= 0x40))
+      //{
+      //  ur_w_ee_page(*(inbuf+5),(inbuf+6));
+      //}
 	  }
     else if(subcmd == 0x35) //read
     {
@@ -248,6 +315,25 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
     {
       
     }    
+  }
+  else if(cmd == 0x83) //eep8
+  {
+	  if(subcmd == 0x11) //write 
+	  {
+      at24c32_write_page(I2C_PORT, AT24C32_ADDR, word_addr,(inbuf+7),8);
+      
+      //resp
+      *(ur_rsp_leng+0) = mst_ur_rsp_rw_eep( word_addr,(inbuf+7),ur_out_buf);
+      ret |= 0x1;
+    }
+    else if(subcmd == 0x35) //read
+    {
+      at24c32_read(I2C_PORT, AT24C32_ADDR,word_addr,&datatemp[0],8);
+      //
+      *(ur_rsp_leng+0) = mst_ur_rsp_rw_eep(word_addr,&datatemp[0],ur_out_buf);
+      ret |= 0x1;
+    }
+    else{}
   }
   return ret;
 }

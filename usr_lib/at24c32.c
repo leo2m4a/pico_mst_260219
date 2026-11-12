@@ -36,3 +36,10 @@ int at24c32_save_sch_rly(i2c_inst_t *i2c, uint8_t dev_addr, const uint8_t *sch_r
 int at24c32_load_sch_rly(i2c_inst_t *i2c, uint8_t dev_addr, uint8_t *sch_rly) {
     return at24c32_read(i2c, dev_addr, SCH_RLY_EEPROM_ADDR, sch_rly, SCH_RLY_SIZE);
 }
+
+//void ur_w_ee_page(i2c_inst_t *i2c, uint8_t dev_addr,,unsigned char addr_byte,unsigned char *wdata)
+//{
+//  uint16_t word_addr;
+//  word_addr = addr_byte; 
+//  at24c32_write_page(i2c, dev_addr,word_addr,wdata,8);
+//}

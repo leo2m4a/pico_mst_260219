@@ -519,7 +519,7 @@ int main()
         #if 1
           ret = mst_ur_cmd_process(&gPARAM_UR1RX_buf[0],&gPARAM_UR1TX_buf[0],&gPARAM_UR1TX_buf_leng,&gPARAM_RFTX_buf[0],&gPARAM_RFTX_buf_leng);
           
-          #if 0
+          #if 1
           lcd_set_cursor(1,12);
           lcd_hex((uint8_t)(ret&0xff));
           lcd_hex((uint8_t)(gPARAM_UR1TX_buf_leng&0xff));
@@ -722,4 +722,31 @@ void read_ds(void)
     lcd_hex2dec((uint8_t)((Stru_curTime.hour)&0xff));
     lcd_hex2dec((uint8_t)((Stru_curTime.min)&0xff));    
         }
+}
+
+void load_sch_from_eep(uint8_t rly_no,uint8_t *dst_rly_sch,uint8_t *def_rly_sch)
+{
+  uint8_t dtemp_l[16];
+  uint8_t dtemp_h[16];
+  uint16_t word_addr;
+  int i;
+  for(i=0;i<24;i++)
+  {
+    *(dst_rly_sch+i) = *(def_rly_sch+i);
+  }
+  word_addr = SCH_RLY0_EEPROM_ADDRH + 0x10*rly_no;
+  at24c32_read(I2C_PORT, AT24C32_ADDR, word_addr,&dtemp_h[0],16);
+  if((dtemp_h[8] ==SCH_RLY_PWD_H)&&(dtemp_h[8] ==SCH_RLY_PWD_L))
+  {
+    word_addr = SCH_RLY0_EEPROM_ADDRL + 0x10*rly_no;
+  at24c32_read(I2C_PORT, AT24C32_ADDR, word_addr,&dtemp_l[0],16);
+  for(i=0;i<16;i++)
+  {
+    *(dst_rly_sch+i) = dtemp_l[i];
+  }
+  for(i=0;i<8;i++)
+  {
+    *(dst_rly_sch+i+16) = dtemp_h[i];
+  }
+  }
 }
