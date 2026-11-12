@@ -57,15 +57,23 @@ uint8_t sub_timeadv(TimeData * time)
     {
         time->sec = 0;
         ret |= 0x1;
-        if(time->min == 59)
+        if(time->min >= 59)
         {
             time->min = 0;
             ret |= 0x2;
-            if(time->hour == 23)
+            if(time->hour >= 23)
             {
                 time->hour = 0;
                 ret |= 0x4;
             }
+            else
+            {
+              time->hour++;
+            }
+        }
+        else
+        {
+          time->min++;
         }
     }
     return ret;
@@ -278,11 +286,11 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
       if(gPARAM_fcnt_1s >= 59)
       {
         gPARAM_fcnt_1s = 0;
-        sub_timeadv(&Stru_curTime);
+      //  sub_timeadv(&Stru_curTime);
       }
       else
       {gPARAM_fcnt_1s++;}
-    
+      sub_timeadv(&Stru_curTime);
       gPARAM_actflag |= 0x1;  
       if((gPARAM_fcnt_1s == 0)||(gPARAM_fcnt_1s == 16)||(gPARAM_fcnt_1s == 32))
       {
