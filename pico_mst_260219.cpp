@@ -301,14 +301,14 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
       else
       {gPARAM_fcnt_1s++;}
       sub_timeadv(&Stru_curTime);
-      gPARAM_actflag |= 0x1;  
+      actflag_set(0x1);  
       if((gPARAM_fcnt_1s == 0)||(gPARAM_fcnt_1s == 16)||(gPARAM_fcnt_1s == 32))
       {
-        gPARAM_actflag |= 0x10;//bcn
+        actflag_set(0x10);//bcn
       }
       else if(gPARAM_fcnt_1s % 4 == 2)
       {
-        gPARAM_actflag |= 0x40;//display
+        actflag_set(0x40);//display
       }
       else if(gPARAM_fcnt_1s % 2 == 1)
       {
@@ -318,7 +318,7 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
             {gPARAM_APOLL_cnt=0;}
             else
             {gPARAM_APOLL_cnt++;}
-             gPARAM_actflag |= 0x80;//auto pool??
+             actflag_set(0x80);//auto pool??
           }
       }
     }  
@@ -353,7 +353,7 @@ void on_uart_rx() {
          gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
          gPARAM_UR1RX_buf_cnt = gPARAM_UR1RX_buf_ptr;
         gPARAM_UR1RX_buf_ptr = 0;
-        gPARAM_actflag |= 0x02;
+        actflag_set(0x02);
       }
       else
       {
@@ -469,9 +469,14 @@ int main()
     lcd_hex2dec((uint8_t)((ds3231_data.minutes)&0xff));
     lcd_string("DS");
     //update_time
-    Stru_curTime.sec=ds3231_data.seconds;
-    Stru_curTime.min=ds3231_data.minutes;
-    Stru_curTime.hour=ds3231_data.hours;
+    {
+      // [fix] Stru_curTime 會在 timer ISR（sub_timeadv）裡被更新，主迴圈寫入時先關中斷
+      uint32_t irq_s = save_and_disable_interrupts();
+      Stru_curTime.sec=ds3231_data.seconds;
+      Stru_curTime.min=ds3231_data.minutes;
+      Stru_curTime.hour=ds3231_data.hours;
+      restore_interrupts(irq_s);
+    }
     
         } else {
     lcd_set_cursor(0,12);
@@ -508,7 +513,7 @@ int main()
               //rf cmd process
               ret = mst_rf_cmd_process(&gPARAM_RFRX_buf_lat[0],&gPARAM_UR1TX_buf[0],&gPARAM_UR1TX_buf_leng,&gDisp_BUF_2[0]);
               if((ret & 0x1) == 0x1)
-              {gPARAM_actflag |= 0x4;}//uart
+              {actflag_set(0x4);}//uart
                  //debug
                  //lcd_set_cursor(3,8);
                  //lcd_hex(ret);
@@ -531,7 +536,7 @@ int main()
       
       if((gPARAM_actflag & 0x1) == 0x1)
       {
-        gPARAM_actflag &= 0xfffffffe;
+        actflag_clr(0x1);
         //toggle led
         if((gPARAM_fcnt_1s & 0x1) == 0x1){ gpio_put(LED_PIN, 1); }
         else {gpio_put(LED_PIN, 0);}
@@ -545,7 +550,7 @@ int main()
       }
       if((gPARAM_actflag & 0x2) == 0x2)//urrx
       {
-        gPARAM_actflag &= ~0x02;
+        actflag_clr(0x02);
         //process urrx
         #if 0
         lcd_set_cursor(2,0);
@@ -566,13 +571,13 @@ int main()
             ret &= ~0x1;
             //send urrsp
             
-            gPARAM_actflag |= 0x4;
+            actflag_set(0x4);
           }
            if((ret & 0x2) == 0x2)
           {
             ret &= ~0x2;
             //send rf,merge to 0x20 
-            gPARAM_actflag |= 0x20;
+            actflag_set(0x20);
             //uart_write_blocking(UART_ID, gPARAM_UR1TX_buf, gPARAM_UR1TX_buf_leng);
           }
           if((ret & 0x4) == 0x4)//actions
@@ -591,17 +596,23 @@ int main()
       }
       else if((gPARAM_actflag & 0x4) == 0x4)
       {
-        gPARAM_actflag &= ~0x4;
+        actflag_clr(0x4);
         uart_write_blocking(UART_ID, gPARAM_UR1TX_buf, gPARAM_UR1TX_buf_leng);
       }
       else if((gPARAM_actflag & 0x10) == 0x10)
       {
-        gPARAM_actflag &= ~0x10;
+        actflag_clr(0x10);
         //compose bcn
-        mst_compose_rf_bcn(&u8_temp16[0],Stru_curTime.sec,Stru_curTime.min,Stru_curTime.hour);
+        {
+          // [fix] 一次取完 sec/min/hour，避免剛好在 59→00 進位時被 ISR 打斷，讀到不一致的時間
+          uint32_t irq_s = save_and_disable_interrupts();
+          uint8_t b_sec = Stru_curTime.sec, b_min = Stru_curTime.min, b_hour = Stru_curTime.hour;
+          restore_interrupts(irq_s);
+          mst_compose_rf_bcn(&u8_temp16[0],b_sec,b_min,b_hour);
+        }
         //copy to txbuf
         memcpy(&gPARAM_RFTX_buf[0],&u8_temp16[0],12);gPARAM_RFTX_buf_leng = 12;
-        gPARAM_actflag |= 0x20;//send
+        actflag_set(0x20);//send
         #if 0
         bcn.hdr = 0x55;
         bcn.length = 0x8;
@@ -632,7 +643,7 @@ int main()
       }
       else if((gPARAM_actflag & 0x20) == 0x20)
       {
-        gPARAM_actflag &= ~0x20;
+        actflag_clr(0x20);
         //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<RF SEND
         //lcd_set_cursor(1,8);
         //lcd_hex(gPARAM_RFTX_buf[0]);lcd_hex(gPARAM_RFTX_buf_leng);
@@ -678,7 +689,7 @@ int main()
       }
       else if((gPARAM_actflag & 0x40) == 0x40)//periodic
       {
-         gPARAM_actflag &= ~0x40;
+         actflag_clr(0x40);
          //display periodically
          if(!(gDisp_BUF_2[0] == 0))
          {
@@ -706,7 +717,7 @@ int main()
       }
       else if((gPARAM_actflag & 0x80) == 0x80)
       {
-        gPARAM_actflag &= ~0x80;
+        actflag_clr(0x80);
         //compose poll
         gPARAM_RFTX_buf_leng = mst_compose_rf_poll(&gPARAM_RFTX_buf[0],gPARAM_APOLL_SID[gPARAM_APOLL_cnt]);
         
@@ -715,7 +726,7 @@ int main()
           //lcd_hex(gPARAM_RFTX_buf[2]);
           lcd_hex(gPARAM_RFTX_buf[3]);
           
-        gPARAM_actflag|=0x20;
+        actflag_set(0x20);
       }
       //  printf("Hello, world!\n");
         sleep_ms(1);
@@ -725,26 +736,30 @@ int main()
 
 void update_ds(unsigned char mode)
 {
+ // [fix] 先取一份 Stru_curTime 快照（ISR 會改它），下面都用快照
+ uint32_t irq_s = save_and_disable_interrupts();
+ TimeData t = Stru_curTime;
+ restore_interrupts(irq_s);
  if(ds3231_read_current_time(&ds3231, &ds3231_data) == 0) {
             //printf("No data is received\n");
     if(mode == 0)
     {
-     ds3231_data.seconds = Stru_curTime.sec;
-     ds3231_data.minutes = Stru_curTime.min;
-     ds3231_data.hours = Stru_curTime.hour;     
-     ds3231_data.month = Stru_curTime.month;
-     ds3231_data.date = Stru_curTime.day;
-     ds3231_data.day = Stru_curTime.dow;
-     ds3231_data.year = Stru_curTime.year;     
+     ds3231_data.seconds = t.sec;
+     ds3231_data.minutes = t.min;
+     ds3231_data.hours = t.hour;     
+     ds3231_data.month = t.month;
+     ds3231_data.date = t.day;
+     ds3231_data.day = t.dow;
+     ds3231_data.year = t.year;     
     
     ds3231_configure_time(&ds3231, &ds3231_data);
     }   
 else if(mode == 1 )
 {
-    ds3231_data.year = Stru_curTime.year;
-    ds3231_data.month = Stru_curTime.month;
-    ds3231_data.date = Stru_curTime.day;    
-ds3231_data.day = Stru_curTime.dow;       
+    ds3231_data.year = t.year;
+    ds3231_data.month = t.month;
+    ds3231_data.date = t.day;    
+ds3231_data.day = t.dow;       
     ds3231_configure_time(&ds3231, &ds3231_data);  
 }  
   }
@@ -754,10 +769,13 @@ void read_ds(void)
 {
     if(ds3231_read_current_time(&ds3231, &ds3231_data) == 0) {
     //update_time
+    // [fix] Stru_curTime 會在 timer ISR 裡被更新，寫入時先關中斷
+    uint32_t irq_s = save_and_disable_interrupts();
     Stru_curTime.month=ds3231_data.month;
     Stru_curTime.day=ds3231_data.date;
     Stru_curTime.min=ds3231_data.minutes;
     Stru_curTime.hour=ds3231_data.hours;
+    restore_interrupts(irq_s);
     lcd_set_cursor(0,8);
     lcd_hex2dec((uint8_t)((Stru_curTime.month)&0xff));
     lcd_hex2dec((uint8_t)((Stru_curTime.day)&0xff));

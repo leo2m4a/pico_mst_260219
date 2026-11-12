@@ -162,6 +162,10 @@ uint8_t mst_ur_rsp_read_eep(uint16_t word_addr,uint8_t *dbuf,uint8_t *outbuf)
 }
 uint8_t mst_ur_rsp_write_mst_a0(uint8_t *outbuf)
 {
+  // [fix #3] 先取快照（ISR 會改 Stru_curTime）
+  uint32_t irq_s = save_and_disable_interrupts();
+  TimeData t = Stru_curTime;
+  restore_interrupts(irq_s);
   uint8_t ret=12;
   
   *(outbuf+0) = 0x7a;
@@ -171,17 +175,21 @@ uint8_t mst_ur_rsp_write_mst_a0(uint8_t *outbuf)
 //
   *(outbuf+4) = 0x11;
   *(outbuf+5) = 0 ;
-  *(outbuf+6) = Stru_curTime.hour ;
-  *(outbuf+7) = Stru_curTime.min;
+  *(outbuf+6) = t.hour ;
+  *(outbuf+7) = t.min;
 //
-  *(outbuf+8)  = Stru_curTime.sec;
-  *(outbuf+9)  = Stru_curTime.month;
-  *(outbuf+10) = Stru_curTime.day;
+  *(outbuf+8)  = t.sec;
+  *(outbuf+9)  = t.month;
+  *(outbuf+10) = t.day;
   *(outbuf+11) = 0;    
   return ret;
 }
 uint8_t mst_ur_rsp_write_mst_a1(uint8_t *outbuf)
 {
+  // [fix #3] 先取快照（ISR 會改 Stru_curTime）
+  uint32_t irq_s = save_and_disable_interrupts();
+  TimeData t = Stru_curTime;
+  restore_interrupts(irq_s);
   uint8_t ret=12;
   
   *(outbuf+0) = 0x7a;
@@ -191,11 +199,11 @@ uint8_t mst_ur_rsp_write_mst_a1(uint8_t *outbuf)
 //
   *(outbuf+4) = 0x11;
   *(outbuf+5) = 1;
-  *(outbuf+6) = Stru_curTime.year ;
-  *(outbuf+7) = Stru_curTime.month;
+  *(outbuf+6) = t.year ;
+  *(outbuf+7) = t.month;
 //
-  *(outbuf+8)  = Stru_curTime.day;
-  *(outbuf+9)  = Stru_curTime.dow;
+  *(outbuf+8)  = t.day;
+  *(outbuf+9)  = t.dow;
   *(outbuf+10) = 0;
   *(outbuf+11) = 0;    
   return ret;
@@ -256,13 +264,24 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
 	  	if(addr == 0)
       {
         //update time,sync to rtc
+        // [fix #2] host 送的年份是「2020 年起算」（docs: Y(+2020)，例如 6 = 2026）。
+        //   原本 inbuf[11]+2020 存進 uint8_t 會溢位（6+2020=2026 → 234），
+        //   DS3231 driver 只收兩位數年份（0–99，>99 會被夾成 99）→ RTC 變成 2099 年。
+        //   改成兩位數年份：inbuf[11]+20（6 → 26 = 2026）。
+        uint8_t year2 = (uint8_t)(*(inbuf+11) + 20);
+        if(year2 > 99) {year2 = 99;}
+        {
+        // [fix #3] Stru_curTime 會在 timer ISR 裡被更新，寫入時先關中斷
+        uint32_t irq_s = save_and_disable_interrupts();
         Stru_curTime.hour  = *(inbuf+6);
         Stru_curTime.min   = *(inbuf+7);
         Stru_curTime.sec   = 0;
         Stru_curTime.month   = *(inbuf+8);
         Stru_curTime.day  = *(inbuf+9);
         Stru_curTime.dow   = *(inbuf+10);
-        Stru_curTime.year   = *(inbuf+11)+2020;
+        Stru_curTime.year   = year2;
+        restore_interrupts(irq_s);
+        }
 
         //Stru_curTime.caldone=1;
         *(ur_rsp_leng+0) = mst_ur_rsp_write_mst_a0(ur_out_buf);
@@ -272,10 +291,16 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
       }
       else if(addr == 1)
       {
+        // [注意] 這條路徑的年份直接存 inbuf[6]（沒有 +20），DS3231 需要兩位數年份 (0–99)。
+        //        docs 這一列只寫「Y」，請確認 host 送的是兩位數年份還是 2020 起算。
+        {
+        uint32_t irq_s = save_and_disable_interrupts();   // [fix #3]
         Stru_curTime.year  = *(inbuf+6);
         Stru_curTime.month = *(inbuf+7);
         Stru_curTime.day   = *(inbuf+8);
         Stru_curTime.dow   = *(inbuf+9);
+        restore_interrupts(irq_s);
+        }
         //dow
         *(ur_rsp_leng+0) = mst_ur_rsp_write_mst_a1(ur_out_buf);
         ret |= 0x1;
