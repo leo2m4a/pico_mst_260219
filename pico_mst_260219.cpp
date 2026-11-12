@@ -738,11 +738,11 @@ void load_sch_from_eep(uint8_t rly_no,uint8_t *dst_rly_sch,uint8_t *def_rly_sch)
   {
     *(dst_rly_sch+i) = *(def_rly_sch+i);
   }
-  word_addr = SCH_RLY0_EEPROM_ADDRH + 0x10*rly_no;
+  word_addr = SCH_RLY0_EEPROM_ADDRH + SCH_RLY_EEPROM_STRIDE*rly_no;
   at24c32_read(I2C_PORT, AT24C32_ADDR, word_addr,&dtemp_h[0],16);
   if((dtemp_h[8] ==SCH_RLY_PWD_H)&&(dtemp_h[9] ==SCH_RLY_PWD_L))
   {
-    word_addr = SCH_RLY0_EEPROM_ADDRL + 0x10*rly_no;
+    word_addr = SCH_RLY0_EEPROM_ADDRL + SCH_RLY_EEPROM_STRIDE*rly_no;
   at24c32_read(I2C_PORT, AT24C32_ADDR, word_addr,&dtemp_l[0],16);
   for(i=0;i<16;i++)
   {
