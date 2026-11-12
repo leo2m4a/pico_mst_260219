@@ -18,6 +18,7 @@ This project is designed for the **宅老大 Pico LoRa** development board, whic
 - Real-time clock via DS3231 (I2C)
 - I2C LCD display
 - UART communication (115200 baud)
+- AT24C32 EEPROM (I2C, address `0x57`): relay schedules loaded at startup, 8-byte read/write over UART
 - Dual button input (UP / DOWN)
 - Manages slave nodes SID `0x81` and `0x83`
 
@@ -75,6 +76,38 @@ Flash the resulting `.uf2` file to the Pico by holding BOOTSEL and dragging the 
 The device operates as a master node (MID `0x02`). It sends 12-byte beacon and poll packets to slave nodes and processes their responses. Command processing is handled in `mst_rf_cmd_proc.cpp`. UART command handling is in `mst_ur_proc.cpp`.
 
 The full UART/RF packet format is documented in [`docs/pico_lora_cmd2604091.ods`](docs/pico_lora_cmd2604091.ods) (LibreOffice Calc spreadsheet).
+
+### UART EEPROM commands (`0x83`)
+
+Read or write 8 bytes of the AT24C32 at any word address. Byte numbers are offsets in the packet.
+
+| Byte | Write request | Read request |
+|---|---|---|
+| 0 | `0x83` | `0x83` |
+| 1 | `0x10` (length) | `0x08` (length) |
+| 4 | `0x11` (write) | `0x35` (read) |
+| 5–6 | Word address (high, low) | Word address (high, low) |
+| 7–14 | 8 data bytes | — |
+
+Replies are 16 bytes, starting `0x92`, `0x10`, MID `0x02`, `0x00`:
+
+| Byte | Write reply | Read reply |
+|---|---|---|
+| 4 | `0x11` | `0x35` |
+| 5 | Address high | `0x00` |
+| 6 | Address low | data0 |
+| 7–13 | data0–data6 | data1–data7 |
+| 14 | data7 | `0x00` |
+| 15 | `0x00` | `0x00` |
+
+### EEPROM layout
+
+| Address | Contents |
+|---|---|
+| `0x0000` | Reserved for system info |
+| `0x0080` | Relay schedules, 96 bytes (`24 × 4`), read into `gSCH_RLY` at startup |
+
+At startup the master loads the schedule from `0x0080` with no validity check.
 
 ## License
 
