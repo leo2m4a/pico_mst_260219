@@ -51,7 +51,7 @@ void lcd_send_byte(uint8_t val, int mode);
 void lcd_clear(void);
 void lcd_set_cursor(int line, int position);
 static inline void lcd_char(char val);
-void lcd_string(char *s);
+void lcd_string(const char *s);
 void lcd_hex(uint8_t bchar);
 void lcd_hex2dec(uint8_t hex);
 void conv_hex2dec_max100(uint8_t hex,uint8_t *dig10,uint8_t *dig1);
