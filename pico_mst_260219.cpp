@@ -19,7 +19,9 @@ void read_ds(void);
 void load_sch_from_eep(uint8_t rly_no,uint8_t *dst_rly_sch,uint8_t *def_rly_sch);
 const char * days[7] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
 
-uint8_t rf_state = 0;
+// rf_state: 0 = 接收中, 1 = 發射中（transmit() 進行中）
+// [fix] 加 volatile：主迴圈寫、ISR 讀
+volatile uint8_t rf_state = 0;
 // 全域變數宣告
 PicoHal* hal = nullptr;
 Module* module = nullptr;
@@ -267,7 +269,15 @@ void irqRadio(uint gpio, uint32_t events) {
         //rf_state = 2;
         }
         else
-        {rf_state = 0;radio->startReceive(); }
+        {
+          // [fix] 原本在這裡呼叫 radio->startReceive()：
+          //   1. 在 ISR 裡做 SPI，會和主迴圈正在進行的 radio->transmit() 搶 SPI。
+          //   2. transmit() 是 blocking，自己會輪詢 DIO1 等 TxDone；ISR 先把 IRQ 清掉、
+          //      切到 RX，transmit() 可能等不到 DIO1 而回報 TX timeout，
+          //      結束時再呼叫 finishTransmit() 把 radio 切回 standby → master 收不到。
+          // 現在 ISR 只標記 TxDone，切回 RX 一律在主迴圈 transmit() 之後做。
+          rf_state = 0;
+        }
     }
 }
 
@@ -629,6 +639,11 @@ int main()
         rf_state = 1;  //must before transmit
         //state = radio->transmit((uint8_t*)&gPARAM_RFTX_buf[0], gPARAM_RFTX_buf_leng);
         state = radio->transmit(&gPARAM_RFTX_buf[0], gPARAM_RFTX_buf_leng);
+        // [fix] transmit() 結束後 radio 在 standby，必須由主迴圈切回 RX
+        //       （原本靠 ISR 裡的 startReceive()，已移除）。
+        //       放在 LCD 之前：LCD 寫入很慢，太晚切回 RX 會漏收 slave 的回應。
+        rf_state = 0;
+        radio->startReceive();
         
           if (state == RADIOLIB_ERR_NONE) {
               printf("success!\n");
