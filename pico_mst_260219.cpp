@@ -165,6 +165,9 @@ rlt_dig[0] = u16temp;
 *(outval+2) = rlt_dig[2];
 *(outval+3) = rlt_dig[3];
 
+// 1 = overflow: inval > 9999, outval[3] is not a single digit
+if(inval > 9999)
+{return 1;}
 return 0;
 }
 uint8_t conv1byte_3dig(unsigned char srchex_l,dec3Dig *dig)
