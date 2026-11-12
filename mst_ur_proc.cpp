@@ -330,7 +330,7 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
     {
       at24c32_read(I2C_PORT, AT24C32_ADDR,word_addr,&datatemp[0],8);
       //
-      *(ur_rsp_leng+0) = mst_ur_rsp_rw_eep(word_addr,&datatemp[0],ur_out_buf);
+      *(ur_rsp_leng+0) = mst_ur_rsp_read_eep(word_addr,&datatemp[0],ur_out_buf);
       ret |= 0x1;
     }
     else{}
