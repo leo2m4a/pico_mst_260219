@@ -15,9 +15,9 @@ if(WIN32)
 else()
     set(USERHOME $ENV{HOME})
 endif()
-set(sdkVersion 2.2.0)
-set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.2.0-a4)
+set(sdkVersion 2.3.1)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.1)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
@@ -44,6 +44,7 @@ RadioLib/src/hal/RPiPico/PicoHal.cpp
     RadioLib/src/modules/SX126x/SX1262.cpp
     usr_lib/i2c_lcd.cpp
     usr_lib/at24c32.c
+    usr_lib/ur_nb.c
     mst_ur_proc.cpp
     mst_rf_cmd_proc.cpp
     )

@@ -291,14 +291,17 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
       }
       else if(addr == 1)
       {
-        // [注意] 這條路徑的年份直接存 inbuf[6]（沒有 +20），DS3231 需要兩位數年份 (0–99)。
-        //        docs 這一列只寫「Y」，請確認 host 送的是兩位數年份還是 2020 起算。
+        // addr 1：只設日期。欄位位置比照 addr 0（docs/pico_lora_cmd2604091.ods）：
+        //   byte 6,7 不使用，byte 8 = M，byte 9 = D，byte 10 = dow，byte 11 = Y(+2020)
+        //   年份和 addr 0 一樣是 2020 起算，存成 DS3231 用的兩位數年份（6 → 26 = 2026）。
+        uint8_t year2 = (uint8_t)(*(inbuf+11) + 20);
+        if(year2 > 99) {year2 = 99;}
         {
         uint32_t irq_s = save_and_disable_interrupts();   // [fix #3]
-        Stru_curTime.year  = *(inbuf+6);
-        Stru_curTime.month = *(inbuf+7);
-        Stru_curTime.day   = *(inbuf+8);
-        Stru_curTime.dow   = *(inbuf+9);
+        Stru_curTime.month = *(inbuf+8);
+        Stru_curTime.day   = *(inbuf+9);
+        Stru_curTime.dow   = *(inbuf+10);
+        Stru_curTime.year  = year2;
         restore_interrupts(irq_s);
         }
         //dow

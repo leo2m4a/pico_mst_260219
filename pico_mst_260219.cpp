@@ -13,6 +13,7 @@
 #include "main.h"
 #include "mst_ur_proc.h"
 #include "mst_rf_cmd_proc.h"
+#include "ur_nb.h"   // [non-blocking UART]
 
 void update_ds(unsigned char);
 void read_ds(void);
@@ -327,40 +328,60 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
 
     return true;
 }
-// RX interrupt handler
-void on_uart_rx() {
-  unsigned char uctemp;
+// [non-blocking UART] 封包解析從 ISR 移到主迴圈。
+//   原本 ISR 一邊拆封包一邊寫 gPARAM_UR1RX_buf，主迴圈同時在讀同一塊 buffer；
+//   而且沒有逾時，中間掉一個 byte 後面的封包全部錯位。
+//   現在 ISR（ur_nb.c）只把 byte 放進 ring，這裡依原本規則組封包：
+//     byte0 = cmd, byte1 = 長度（0 或 >= 32 視為錯誤，重新開始）
+//   並加上 byte 間逾時：超過 UR_FRAME_TIMEOUT_US 沒收到下一個 byte 就丟掉半包重來。
+//   上一包還沒處理完（旗標 0x2 未清）時先不解析，資料留在 ring 裡等。
+#define UR_FRAME_TIMEOUT_US 20000u   // 20 ms（115200 bps 下一個 byte 約 87 us）
 
-    while (uart_is_readable(UART_ID)) {
-      uctemp = uart_getc(UART_ID);
-      if(gPARAM_UR1RX_buf_ptr == 0)
-      {
-        gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
-        gPARAM_UR1RX_buf_ptr++;
-      }
-      else if(gPARAM_UR1RX_buf_ptr == 1)
-      {
-        gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
-        gPARAM_UR1RX_buf_leng = uctemp;
-        if((gPARAM_UR1RX_buf_leng >=32)|(gPARAM_UR1RX_buf_leng ==0))
-        {gPARAM_UR1RX_buf_ptr = 0;gPARAM_UR1RX_buf_leng = 32;}
-        else
-        {gPARAM_UR1RX_buf_ptr++;}
+void ur_frame_poll(void)
+{
+  static uint32_t last_us = 0;
+  int c;
 
-      }
-      else if(gPARAM_UR1RX_buf_ptr >= (gPARAM_UR1RX_buf_leng-1))
-      {
-         gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
-         gPARAM_UR1RX_buf_cnt = gPARAM_UR1RX_buf_ptr;
-        gPARAM_UR1RX_buf_ptr = 0;
-        actflag_set(0x02);
-      }
-      else
-      {
-        gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
-        gPARAM_UR1RX_buf_ptr++;
-      }
+  if ((gPARAM_actflag & 0x2) == 0x2) { return; }   // 上一包還沒處理
+
+  if ((gPARAM_UR1RX_buf_ptr != 0) && ((time_us_32() - last_us) > UR_FRAME_TIMEOUT_US))
+  {
+    gPARAM_UR1RX_buf_ptr = 0;                       // 逾時：丟掉半包
+  }
+
+  while ((c = ur_nb_getc()) >= 0)
+  {
+    uint8_t uctemp = (uint8_t)c;
+    last_us = time_us_32();
+
+    if(gPARAM_UR1RX_buf_ptr == 0)
+    {
+      gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
+      gPARAM_UR1RX_buf_ptr++;
     }
+    else if(gPARAM_UR1RX_buf_ptr == 1)
+    {
+      gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
+      gPARAM_UR1RX_buf_leng = uctemp;
+      if((gPARAM_UR1RX_buf_leng >=32)|(gPARAM_UR1RX_buf_leng ==0))
+      {gPARAM_UR1RX_buf_ptr = 0;gPARAM_UR1RX_buf_leng = 32;}
+      else
+      {gPARAM_UR1RX_buf_ptr++;}
+    }
+    else if(gPARAM_UR1RX_buf_ptr >= (gPARAM_UR1RX_buf_leng-1))
+    {
+      gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
+      gPARAM_UR1RX_buf_cnt = gPARAM_UR1RX_buf_ptr;
+      gPARAM_UR1RX_buf_ptr = 0;
+      actflag_set(0x02);
+      return;                                       // 一次一包，剩下的留在 ring
+    }
+    else
+    {
+      gPARAM_UR1RX_buf[gPARAM_UR1RX_buf_ptr] = uctemp;
+      gPARAM_UR1RX_buf_ptr++;
+    }
+  }
 }
 
 int main()
@@ -416,25 +437,12 @@ int main()
     // For more examples of timer use see https://github.com/raspberrypi/pico-examples/tree/master/timer
 
     // Set up our UART
-    uart_init(UART_ID, BAUD_RATE);
-    // Set the TX and RX pins by using the function select on the GPIO
-    // Set datasheet for more information on function select
-    gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
-    
-    // Use some the various UART functions to send out data
-    // In a default system, printf will also output via the default UART
-    // Select correct interrupt for the UART we are using
-    int UART_IRQ = UART_ID == uart0 ? UART0_IRQ : UART1_IRQ;
-
-    // And set up and enable the interrupt handlers
-    irq_set_exclusive_handler(UART_IRQ, on_uart_rx);
-    irq_set_enabled(UART_IRQ, true);
-
-    // Now enable the UART to send interrupts - RX only
-    uart_set_irq_enables(UART_ID, true, false);    
-    // Send out a string, with CR/LF conversions
-    uart_puts(UART_ID, " Hello, UART!\n");
+    // [non-blocking UART] uart_init / 腳位 / 中斷都在 ur_nb_init() 裡（RX、TX 都用中斷 + ring buffer）
+    ur_nb_init(UART_ID, BAUD_RATE, UART_TX_PIN, UART_RX_PIN);
+    {
+      static const uint8_t hello[] = " Hello, UART!\r\n";
+      ur_nb_send(hello, sizeof(hello) - 1);
+    }
     
     // For more examples of UART use see https://github.com/raspberrypi/pico-examples/tree/master/uart
 
@@ -447,7 +455,7 @@ int main()
     
     lcd_init();
     lcd_set_cursor(0,3);
-    lcd_string("m002");
+    lcd_string("m003");
     //lcd_set_cursor(1,0);lcd_string("X");
     //lcd_set_cursor(2,0);lcd_string("Y");
     //lcd_set_cursor(3,0);lcd_string("Z");
@@ -493,6 +501,7 @@ int main()
     }
 
     while (true) {
+      ur_frame_poll();   // [non-blocking UART] 從 RX ring 組封包，完成時設旗標 0x2
       if (receivedFlag) {
             // 關閉中斷，避免處理過程中被打斷
             gpio_set_irq_enabled(RADIO_DIO1_PIN, GPIO_IRQ_EDGE_RISE, false);
@@ -513,7 +522,11 @@ int main()
               //rf cmd process
               ret = mst_rf_cmd_process(&gPARAM_RFRX_buf_lat[0],&gPARAM_UR1TX_buf[0],&gPARAM_UR1TX_buf_leng,&gDisp_BUF_2[0]);
               if((ret & 0x1) == 0x1)
-              {actflag_set(0x4);}//uart
+              {
+                // [non-blocking UART] 直接放進 TX ring（不會等）。
+                // 原本設旗標 0x4 晚點才送；若期間 UART 命令的回應也寫進 gPARAM_UR1TX_buf，前一包會被蓋掉。
+                ur_nb_send(gPARAM_UR1TX_buf, gPARAM_UR1TX_buf_leng);
+              }//uart
                  //debug
                  //lcd_set_cursor(3,8);
                  //lcd_hex(ret);
@@ -570,8 +583,8 @@ int main()
           {
             ret &= ~0x1;
             //send urrsp
-            
-            actflag_set(0x4);
+            // [non-blocking UART] 直接放進 TX ring，理由同上
+            ur_nb_send(gPARAM_UR1TX_buf, gPARAM_UR1TX_buf_leng);
           }
            if((ret & 0x2) == 0x2)
           {
@@ -596,8 +609,9 @@ int main()
       }
       else if((gPARAM_actflag & 0x4) == 0x4)
       {
+        // [non-blocking UART] 已不再使用（改成組好回應就直接 ur_nb_send），保留以防其他地方設這個旗標
         actflag_clr(0x4);
-        uart_write_blocking(UART_ID, gPARAM_UR1TX_buf, gPARAM_UR1TX_buf_leng);
+        ur_nb_send(gPARAM_UR1TX_buf, gPARAM_UR1TX_buf_leng);
       }
       else if((gPARAM_actflag & 0x10) == 0x10)
       {
