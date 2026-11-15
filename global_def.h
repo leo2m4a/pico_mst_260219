@@ -27,7 +27,14 @@ static inline void actflag_clr(uint32_t m)
 #endif
 
 // 韌體版號：開機時顯示在 LCD，用來確認新程式真的燒進去了。每次改完程式請加一號。
-#define FW_VERSION "m004"
+#define FW_VERSION "m006"
+
+// RTC 校正系統時鐘的時間點：每天 RTC_SYNC_HOUR_A 與 RTC_SYNC_HOUR_B 點的第 RTC_SYNC_MIN 分
+#define RTC_SYNC_HOUR_A 0
+#define RTC_SYNC_HOUR_B 12
+#define RTC_SYNC_MIN    5
+// 午夜過後第幾秒向 RTC 讀日期（留一點餘裕，避免 RTC 還沒跨日）
+#define RTC_DATE_SEC    10
 
 // SPI Defines
 // We are going to use SPI 0, and allocate it to the following GPIO pins

@@ -17,6 +17,8 @@
 
 void update_ds(unsigned char);
 void read_ds(void);
+bool rtc_sync(void);
+bool rtc_read_date(void);
 void load_sch_from_eep(uint8_t rly_no,uint8_t *dst_rly_sch,uint8_t *def_rly_sch);
 const char * days[7] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
 
@@ -300,14 +302,11 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
     {
       gPARAM_fcnt_100ms=0;
       
-      if(gPARAM_fcnt_1s >= 59)
-      {
-        gPARAM_fcnt_1s = 0;
-      //  sub_timeadv(&Stru_curTime);
-      }
-      else
-      {gPARAM_fcnt_1s++;}
+      // [timer] 系統時鐘 = 100 ms timer + Stru_curTime 的 時/分/秒。
+      //         gPARAM_fcnt_1s 不再自己從開機起算，改成等於目前的「秒」，
+      //         beacon（秒 = 0 / 16 / 32）和之後的 TDMA 都以同一個時鐘為準。
       sub_timeadv(&Stru_curTime);
+      gPARAM_fcnt_1s = Stru_curTime.sec;
       actflag_set(0x1);  
       if((gPARAM_fcnt_1s == 0)||(gPARAM_fcnt_1s == 16)||(gPARAM_fcnt_1s == 32))
       {
@@ -440,7 +439,9 @@ int main()
 
     // Timer example code - This example fires off the callback after 2000ms
     //add_alarm_in_ms(2000, alarm_callback, NULL, false);
-    add_repeating_timer_ms(100, repeating_timer_callback, NULL, &timer);
+    // [timer] 負數 = 每 100 ms 固定觸發（對齊絕對時間，晚了下一拍會補回）。
+    //         正數是「上一次 callback 結束後再等 100 ms」，每一拍的延遲都會累積，時鐘會越走越慢。
+    add_repeating_timer_ms(-100, repeating_timer_callback, NULL, &timer);
     // For more examples of timer use see https://github.com/raspberrypi/pico-examples/tree/master/timer
 
     // Set up our UART
@@ -492,6 +493,7 @@ int main()
       Stru_curTime.hour=ds3231_data.hours;
       restore_interrupts(irq_s);
     }
+    rtc_sync();   // [timer] 開機：對齊 RTC 的秒邊界，之後由 100 ms timer 接手
     
         } else {
     lcd_set_cursor(0,12);
@@ -563,9 +565,42 @@ int main()
         //
         lcd_set_cursor(0,0);
         lcd_hex2dec((uint8_t)(gPARAM_fcnt_1s&0xff));
-        if(( gPARAM_fcnt_1s == 5))
         {
-          read_ds();
+          // [timer] RTC 不再每分鐘介入，只在 RTC_SYNC_HOUR_A / _B 的第 RTC_SYNC_MIN 分校正一次
+          //         （預設 00:05 與 12:05）。其餘時間由 100 ms timer 自己走。
+          static uint8_t rtc_sync_done_hour = 0xff;   // 這個時段是否已校正過
+          uint32_t irq_s = save_and_disable_interrupts();
+          uint8_t n_hour = Stru_curTime.hour, n_min = Stru_curTime.min, n_sec = Stru_curTime.sec;
+          restore_interrupts(irq_s);
+
+          if(((n_hour == RTC_SYNC_HOUR_A) || (n_hour == RTC_SYNC_HOUR_B)) && (n_min >= RTC_SYNC_MIN))
+          {
+            if(rtc_sync_done_hour != n_hour)
+            {
+              rtc_sync_done_hour = n_hour;
+              if(rtc_sync()) { read_ds(); }
+            }
+          }
+          // [timer] 換日：100 ms timer 只推進 時/分/秒，月/日 在午夜過後向 RTC 讀一次。
+          //         等到 00:00:RTC_DATE_SEC 才讀，是因為系統時鐘和 RTC 可能差 1 秒左右，
+          //         太早讀的話 RTC 可能還停在前一天的 23:59:59。這裡只更新日期，不動 時/分/秒。
+          static bool rtc_date_done = false;
+          if((n_hour == 0) && (n_min == 0))
+          {
+            if(!rtc_date_done && (n_sec >= RTC_DATE_SEC))
+            {
+              rtc_date_done = true;
+              if(rtc_read_date()) { read_ds(); }
+            }
+          }
+          else
+          {
+            rtc_date_done = false;
+          }
+          if(n_sec == 0)
+          {
+            read_ds();   // 每分鐘更新 LCD 上的 月/日/時/分（只顯示，不讀 RTC）
+          }
         }
       }
       // [fix] gPARAM_RFTX_buf 只有一個，host 命令、beacon、自動輪詢都會寫它，再設旗標 0x20 等送出。
@@ -610,6 +645,16 @@ int main()
             if(gPARAM_ACT_DATA[0] == 0)
             {
               update_ds(0);
+              // [timer] host 校時：時間已寫進 RTC，系統時鐘也從這一刻起算新的一秒，
+              //         並立刻多發一次 beacon，讓 slave 不用等到下一個排定的 beacon。
+              {
+                uint32_t irq_s = save_and_disable_interrupts();
+                gPARAM_fcnt_100ms = 0;
+                gPARAM_fcnt_1s = Stru_curTime.sec;
+                restore_interrupts(irq_s);
+              }
+              actflag_set(0x10);
+              read_ds();
             }
             else if(gPARAM_ACT_DATA[0] == 1)
             {
@@ -790,23 +835,62 @@ ds3231_data.day = t.dow;
   }
 }
 
+// [timer] 只負責把 Stru_curTime 的 月/日/時/分 顯示到 LCD，不再讀 RTC。
+//         （原本每分鐘讀一次 DS3231 覆寫時、分；現在 RTC 只在 rtc_sync() 介入。）
 void read_ds(void)
 {
-    if(ds3231_read_current_time(&ds3231, &ds3231_data) == 0) {
-    //update_time
-    // [fix] Stru_curTime 會在 timer ISR 裡被更新，寫入時先關中斷
     uint32_t irq_s = save_and_disable_interrupts();
-    Stru_curTime.month=ds3231_data.month;
-    Stru_curTime.day=ds3231_data.date;
-    Stru_curTime.min=ds3231_data.minutes;
-    Stru_curTime.hour=ds3231_data.hours;
+    TimeData t = Stru_curTime;
     restore_interrupts(irq_s);
     lcd_set_cursor(0,8);
-    lcd_hex2dec((uint8_t)((Stru_curTime.month)&0xff));
-    lcd_hex2dec((uint8_t)((Stru_curTime.day)&0xff));
-    lcd_hex2dec((uint8_t)((Stru_curTime.hour)&0xff));
-    lcd_hex2dec((uint8_t)((Stru_curTime.min)&0xff));    
-        }
+    lcd_hex2dec((uint8_t)((t.month)&0xff));
+    lcd_hex2dec((uint8_t)((t.day)&0xff));
+    lcd_hex2dec((uint8_t)((t.hour)&0xff));
+    lcd_hex2dec((uint8_t)((t.min)&0xff));
+}
+
+// [timer] 午夜過後只向 RTC 讀日期（月/日/星期/年），不動 時/分/秒，不會擋住主迴圈。
+//   回傳 true = 已更新；false = RTC 讀不到，日期維持不變。
+bool rtc_read_date(void)
+{
+    if(ds3231_read_current_time(&ds3231, &ds3231_data) != 0) { return false; }
+    uint32_t irq_s = save_and_disable_interrupts();
+    Stru_curTime.month = ds3231_data.month;
+    Stru_curTime.day   = ds3231_data.date;
+    Stru_curTime.dow   = ds3231_data.day;
+    Stru_curTime.year  = ds3231_data.year;
+    restore_interrupts(irq_s);
+    return true;
+}
+
+// [timer] 用 RTC 校正系統時鐘（開機、每天 00:05 / 12:05 各一次）。
+//   DS3231 只能讀到「秒」，隨便一個時間點去讀會有最多 1 秒的誤差，
+//   所以先等 RTC 的秒數跳動（秒邊界），在那一刻把 時/分/秒/月/日 寫進系統時鐘，
+//   並把 100 ms 計數歸零，兩邊的秒邊界就對齊了（誤差約幾 ms）。
+//   代價：會擋住主迴圈最多約 1 秒；期間收到的 RF 封包會等這裡結束後才處理。
+//   回傳 true = 已校正；false = RTC 讀不到或沒在走，系統時鐘維持不變。
+bool rtc_sync(void)
+{
+    if(ds3231_read_current_time(&ds3231, &ds3231_data) != 0) { return false; }
+    uint8_t s0 = ds3231_data.seconds;
+    absolute_time_t timeout = make_timeout_time_ms(1200);
+    do
+    {
+        sleep_ms(2);
+        if(ds3231_read_current_time(&ds3231, &ds3231_data) != 0) { return false; }
+    } while((ds3231_data.seconds == s0) && !time_reached(timeout));
+    if(ds3231_data.seconds == s0) { return false; }
+
+    uint32_t irq_s = save_and_disable_interrupts();
+    gPARAM_fcnt_100ms  = 0;
+    Stru_curTime.sec   = ds3231_data.seconds;
+    Stru_curTime.min   = ds3231_data.minutes;
+    Stru_curTime.hour  = ds3231_data.hours;
+    Stru_curTime.month = ds3231_data.month;
+    Stru_curTime.day   = ds3231_data.date;
+    gPARAM_fcnt_1s     = Stru_curTime.sec;
+    restore_interrupts(irq_s);
+    return true;
 }
 
 void load_sch_from_eep(uint8_t rly_no,uint8_t *dst_rly_sch,uint8_t *def_rly_sch)
