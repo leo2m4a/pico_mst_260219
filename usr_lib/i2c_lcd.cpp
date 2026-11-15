@@ -84,7 +84,22 @@ void lcd_hex2dec(uint8_t hex) {
   lcd_char(*(bNum+dig1));
 }
 
+// [auto-detect] PCF8574 背板的位址有兩種：PCF8574 = 0x27、PCF8574A = 0x3F。
+// 開機時各試讀 1 byte，有回應（ACK）的就是這塊板子的 LCD，同一份韌體兩種板子都能用。
+// 兩個都沒回應時維持 i2c_lcd.h 裡的預設值。讀 PCF8574 只會讀回腳位狀態，不影響 LCD。
+static void lcd_detect_addr(void) {
+    static const uint8_t cand[2] = {0x27, 0x3f};
+    uint8_t dummy;
+    for (int i = 0; i < 2; i++) {
+        if (i2c_read_timeout_us(I2C_PORT, cand[i], &dummy, 1, false, 5000) == 1) {
+            gPARAM_lcd_i2caddr = cand[i];
+            return;
+        }
+    }
+}
+
 void lcd_init(void) {
+    lcd_detect_addr();
     lcd_send_byte(0x03, LCD_COMMAND);
     lcd_send_byte(0x03, LCD_COMMAND);
     lcd_send_byte(0x03, LCD_COMMAND);

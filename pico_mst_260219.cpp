@@ -462,7 +462,7 @@ int main()
     
     lcd_init();
     lcd_set_cursor(0,3);
-    lcd_string("m003");
+    lcd_string(FW_VERSION);   // 版號定義在 global_def.h
     //lcd_set_cursor(1,0);lcd_string("X");
     //lcd_set_cursor(2,0);lcd_string("Y");
     //lcd_set_cursor(3,0);lcd_string("Z");

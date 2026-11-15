@@ -34,7 +34,7 @@ const int LCD_BACKLIGHT = 0x08;
 
 const int LCD_ENABLE_BIT = 0x04;
 
-// By default these LCD display drivers are on bus address 0x27
+// LCD 位址在 lcd_init() 開機自動偵測（0x27 / 0x3f），下面的值只是兩個都沒回應時的預設值
 //static int gPARAM_lcd_i2caddr = 0x27;
 static int gPARAM_lcd_i2caddr = 0x3f;
 
