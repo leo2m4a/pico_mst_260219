@@ -308,7 +308,13 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
       sub_timeadv(&Stru_curTime);
       gPARAM_fcnt_1s = Stru_curTime.sec;
       actflag_set(0x1);  
-      if((gPARAM_fcnt_1s == 0)||(gPARAM_fcnt_1s == 16)||(gPARAM_fcnt_1s == 32))
+      // [beacon] 送出間隔由 global_def.h 的 BEACON_INTERVAL_S 控制（原本寫死在每分鐘第 0/16/32 秒）。
+      //          以「當日秒數」對間隔取餘數，所以時間點對齊時鐘：
+      //          例如 20 → 每分鐘 :00 :20 :40；60 → 每分鐘 :00；600 → 每 10 分鐘整。
+      uint32_t sec_of_day = (uint32_t)Stru_curTime.hour * 3600u
+                          + (uint32_t)Stru_curTime.min * 60u
+                          + (uint32_t)Stru_curTime.sec;
+      if((sec_of_day % BEACON_INTERVAL_S) == 0)
       {
         actflag_set(0x10);//bcn
       }
