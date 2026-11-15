@@ -79,6 +79,12 @@ uint8_t sub_timeadv(TimeData * time)
           time->min++;
         }
     }
+    else
+    {
+        // [fix] 原本沒有這個分支：sec 只在 59 時歸零，其餘時候不會前進，
+        //       Stru_curTime.sec 一直停在開機時讀到的值，beacon 的秒數也就固定不動。
+        time->sec++;
+    }
     return ret;
 }
 
@@ -414,7 +420,8 @@ int main()
     module = new Module(hal, RADIO_CS_PIN, RADIO_DIO1_PIN, RADIO_RST_PIN,RADIO_BUSY_PIN);
     // Create a new instance of the SX1262 radio
     radio = new SX1262(module);
-    state = radio->begin(915.0,125.0,7,5,0x12,20);
+    // 922.5 MHz：台灣 LoRa 免執照頻段 920–925 MHz 的中間。master / slave 必須相同。
+    state = radio->begin(922.5,125.0,7,5,0x12,20);
     if (state != RADIOLIB_ERR_NONE) {
         //printf("Failed to initialize radio, code %d\n", state);
         while (true);
@@ -561,7 +568,11 @@ int main()
           read_ds();
         }
       }
-      if((gPARAM_actflag & 0x2) == 0x2)//urrx
+      // [fix] gPARAM_RFTX_buf 只有一個，host 命令、beacon、自動輪詢都會寫它，再設旗標 0x20 等送出。
+      //       還有封包等著送（0x20）時，這三個來源都先不動，等這一包送完的下一圈再處理，
+      //       否則後寫的會蓋掉前一包（原本 host 的命令可能被 beacon 蓋掉而沒送出）。
+      #define RF_TX_PENDING() ((gPARAM_actflag & 0x20) == 0x20)
+      if(((gPARAM_actflag & 0x2) == 0x2) && !RF_TX_PENDING())//urrx
       {
         actflag_clr(0x02);
         //process urrx
@@ -613,7 +624,7 @@ int main()
         actflag_clr(0x4);
         ur_nb_send(gPARAM_UR1TX_buf, gPARAM_UR1TX_buf_leng);
       }
-      else if((gPARAM_actflag & 0x10) == 0x10)
+      else if(((gPARAM_actflag & 0x10) == 0x10) && !RF_TX_PENDING())
       {
         actflag_clr(0x10);
         //compose bcn
@@ -729,7 +740,7 @@ int main()
            
          }
       }
-      else if((gPARAM_actflag & 0x80) == 0x80)
+      else if(((gPARAM_actflag & 0x80) == 0x80) && !RF_TX_PENDING())
       {
         actflag_clr(0x80);
         //compose poll

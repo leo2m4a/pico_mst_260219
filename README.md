@@ -13,7 +13,7 @@ This project is designed for the **宅老大 Pico LoRa** development board, whic
 
 ## Features
 
-- LoRa RF communication via SX1262 (915 MHz, SF7, BW 125 kHz)
+- LoRa RF communication via SX1262 (922.5 MHz, SF7, BW 125 kHz)
 - Beacon broadcast and slave node polling
 - Real-time clock via DS3231 (I2C)
 - I2C LCD display
