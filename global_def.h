@@ -27,7 +27,7 @@ static inline void actflag_clr(uint32_t m)
 #endif
 
 // 韌體版號：開機時顯示在 LCD，用來確認新程式真的燒進去了。每次改完程式請加一號。
-#define FW_VERSION "m007"
+#define FW_VERSION "m008"
 
 // beacon 送出間隔（秒）。時間點對齊時鐘（當日秒數 % 間隔 == 0）。
 // 必須能整除 86400（一天的秒數），這樣跨日時間隔才不會變。

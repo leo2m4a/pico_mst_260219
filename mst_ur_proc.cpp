@@ -275,7 +275,8 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
         uint32_t irq_s = save_and_disable_interrupts();
         Stru_curTime.hour  = *(inbuf+6);
         Stru_curTime.min   = *(inbuf+7);
-        Stru_curTime.sec   = 0;
+        // [m008] 13-byte 版本在 byte 12 帶秒數（host 在整秒時送出）；舊的 12-byte 指令沒有秒數，照舊當 0 秒
+        Stru_curTime.sec   = ((*(inbuf+1) >= 13) && (*(inbuf+12) < 60)) ? *(inbuf+12) : 0;
         Stru_curTime.month   = *(inbuf+8);
         Stru_curTime.day  = *(inbuf+9);
         Stru_curTime.dow   = *(inbuf+10);
