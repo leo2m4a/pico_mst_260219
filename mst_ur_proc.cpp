@@ -208,6 +208,40 @@ uint8_t mst_ur_rsp_write_mst_a1(uint8_t *outbuf)
   *(outbuf+11) = 0;    
   return ret;
 }
+// host → slave 的寫入命令（0x78）轉成 RF 封包：表頭換成 master 的 MID，資料原樣照搬。
+//   total = 封包總長度（addr 0 是 12 bytes；排程 addr 0x10~0x12 是 16 bytes）
+//   byte 6 之後的資料直接取自 host 命令的同一個位置，master 不解讀內容。
+uint8_t mst_compose_rf_write_fwd(uint8_t *outbuf,uint8_t sid,uint8_t addr,const uint8_t *inbuf,uint8_t total)
+{
+  int i;
+  *(outbuf+0) = 0x78;
+  *(outbuf+1) = total;
+  *(outbuf+2) = MY_MID;//mid
+  *(outbuf+3) = sid;//sid
+  *(outbuf+4) = 0x11;//subcmd
+  *(outbuf+5) = addr;
+  for(i=6;i<total;i++)
+  {*(outbuf+i) = *(inbuf+i);}
+  return total;
+}
+
+// 上面那個轉發命令的 UART 即時回應：只代表「master 已收到並送出」，
+// slave 實際寫入的結果要等之後的 0x88 封包。格式與 addr 4 的回應相同，byte 5 = addr。
+uint8_t mst_ur_rsp_write_slv_fwd(uint8_t *outbuf,uint8_t sid,uint8_t addr)
+{
+  int i;
+  uint8_t ret=12;
+  *(outbuf+0) = 0x89;
+  *(outbuf+1) = ret;
+  *(outbuf+2) = MY_MID;
+  *(outbuf+3) = sid;//sid
+  *(outbuf+4) = 0x11;
+  *(outbuf+5) = addr;
+  for(i=6;i<ret;i++)
+  {*(outbuf+i) = 0;}
+  return ret;
+}
+
 uint8_t mst_ur_rsp_write_slv_a4(uint8_t *outbuf,uint8_t sid)
 {
   uint8_t ret=12;
@@ -328,7 +362,25 @@ uint8_t mst_ur_cmd_process(uint8_t *inbuf,uint8_t *ur_out_buf,uint8_t *ur_rsp_le
 	  {
       if(addr == 0)
       {
-        
+        // 排程開關（sch_en + 密碼）：12 bytes，轉發給 slave
+        if(*(inbuf+1) >= 12)
+        {
+          *(ur_rsp_leng+0) = mst_ur_rsp_write_slv_fwd(ur_out_buf,sid,addr);
+          *(rf_send_leng+0) = mst_compose_rf_write_fwd(rf_out_buf,sid,addr,inbuf,12);
+          ret |= 0x3;
+        }
+      }
+      else if((addr >= 0x10) && (addr <= 0x12))
+      {
+        // 排程內容：每個 addr 帶 8 bytes（byte 6~13），16 bytes，轉發給 slave
+        //   0x10 → RLY[0..7]、0x11 → RLY[8..15]、0x12 → RLY[16..23]
+        // host 送來的長度不足 14 bytes 就不轉發，避免把上一包殘留的資料當成排程送出去
+        if(*(inbuf+1) >= 14)
+        {
+          *(ur_rsp_leng+0) = mst_ur_rsp_write_slv_fwd(ur_out_buf,sid,addr);
+          *(rf_send_leng+0) = mst_compose_rf_write_fwd(rf_out_buf,sid,addr,inbuf,16);
+          ret |= 0x3;
+        }
       }
 	  	else if(addr == 4)//rly
       {
