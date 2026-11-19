@@ -39,6 +39,12 @@ uint8_t mst_rf_cmd_process(uint8_t *inbuf,uint8_t *rspbuf,uint8_t *rspleng,uint8
         //compose uart response
         ret |= 0x1;
       }
+      else if((addr == 0) || ((addr >= 0x10) && (addr <= 0x12)))
+      {
+        // slave 對「排程開關 / 排程內容」的確認 → 轉給 host
+        *(rspleng+0) = mst_compose_ur_rsp_wfwd(inbuf,rspbuf);
+        ret |= 0x1;
+      }
     }
     else if(subcmd == 0x35)//read
     {}
@@ -75,6 +81,22 @@ uint8_t mst_compose_ur_rsp_w4(uint8_t *inbuf,uint8_t *outbuf)
   *(outbuf+9) = *(inbuf+8);
   *(outbuf+10) = 0;
   *(outbuf+11) = 0;  
+  return ret;
+}
+
+// slave 的寫入確認（RF 0x89，16 bytes）→ host（UART 0x88，16 bytes）。
+// 只把表頭換成 0x88，其餘 byte 2~15 原樣轉出：
+//   byte : 0   1   2    3    4   5     6 ........ 13   14  15
+//   排程 : 88  10  00   SID  11  addr  slave 實際寫入的 8 bytes  00  addr
+//   開關 : 88  10  00   SID  11  00    目前狀態(1e=啟用 / f1=停用)  00 ...
+uint8_t mst_compose_ur_rsp_wfwd(uint8_t *inbuf,uint8_t *outbuf)
+{
+  int i;
+  uint8_t ret=16;
+  *(outbuf+0) = 0x88;
+  *(outbuf+1) = ret;
+  for(i=2;i<ret;i++)
+  {*(outbuf+i) = *(inbuf+i);}
   return ret;
 }
 
